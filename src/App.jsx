@@ -44,8 +44,8 @@ const WHATIF_TOGGLES=[
 
 
 /* ═══ PROMPTS (compact to stay under rate limits) ═══ */
-const J="\n\nRESPOND WITH ONLY VALID JSON. No markdown, no backticks, no commentary.";
-function buildPrompt(phase,inp,mkt,bType){
+const J="\n\nRESPOND WITH ONLY VALID JSON. No markdown, no backticks, no commentary.\n\nSCORING CALIBRATION: Be strict and realistic. No website/few reviews/no social = 15-25. Average local business = 35-50. Good online presence = 55-70. Excellent = 75-90. Reserve 90+ for truly outstanding. Most businesses score 30-55.";
+function buildPrompt(phase,inp,mkt,bType,prevData=null){
   const socials=[inp.website&&`Web:${inp.website}`,inp.facebook&&`FB:${inp.facebook}`,inp.instagram&&`IG:${inp.instagram}`,inp.tiktok&&`TT:${inp.tiktok}`,inp.youtube&&`YT:${inp.youtube}`,inp.twitter&&`X:${inp.twitter}`,inp.linkedin&&`LI:${inp.linkedin}`].filter(Boolean).join(", ");
   const biz=`${inp.name}, ${inp.city}, ${COUNTRIES.find(c=>c.code===inp.country)?.name||inp.country} (${bType||"unknown"})${socials?"\n"+socials:""}`;
   const P={
@@ -59,7 +59,7 @@ function buildPrompt(phase,inp,mkt,bType){
 
     competitive:`Find 3 real competitors near this business, compare scores, and describe what a customer sees at 10pm on each site:\n${biz}\n\nReturn JSON: {"score":0,"competitors":[{"name":"","reviewCount":0,"avgRating":0,"hasWebsite":false,"hasChatbot":false,"hasBooking":false,"socialPresence":"WEAK","estimatedScore":0}],"marketPosition":"MID","areaAvgReviews":0,"afterHoursComparison":{"thisBusiness":"","topCompetitor":"","competitorName":""},"findings":["issue1"],"positives":["good1"]}${J}`,
 
-    recommendations:`Generate 5 prioritized fixes with free copy-paste content and revenue math for:\n${biz}\nLTV: ${mkt.ltv}\n\nReturn JSON: {"overallScore":0,"potentialScore":0,"monthlyLossPercent":"","monthlyGainPercent":"","revenueMath":"","topFixes":[{"priority":1,"title":"","impact":"HIGH","difficulty":"EASY","diyTime":"","zidlyTime":"","freeContent":"","zidlyModule":"","zidlyDescription":"","explanation":""}],"quickWins":["win1","win2","win3"],"industryAvgScore":0,"percentile":""}${J}`
+    recommendations:`Generate 5 prioritized fixes with free copy-paste content and revenue math for:\n${biz}\nLTV: ${mkt.ltv}\n${prevData?`\nPREVIOUS SCAN DATA:\n${JSON.stringify(prevData)}\n`:""}\nReturn JSON: {"overallScore":0,"potentialScore":0,"monthlyLossPercent":"","monthlyGainPercent":"","revenueMath":"","topFixes":[{"priority":1,"title":"","impact":"HIGH","difficulty":"EASY","diyTime":"","zidlyTime":"","freeContent":"","zidlyModule":"","zidlyDescription":"","explanation":""}],"quickWins":["win1","win2","win3"],"industryAvgScore":0,"percentile":""}${J}`
   };
   return P[phase];
 }
@@ -367,19 +367,32 @@ export default function App(){
     return()=>window.removeEventListener("google-places-ready",init);
   },[]);
 
-  const callAPI=async(prompt,model="claude-haiku-4-5-20251001")=>{
-    const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),55000);
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,max_tokens:1500,messages:[{role:"user",content:prompt}]}),signal:ac.signal}).finally(()=>clearTimeout(timer));
-    if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||JSON.stringify(err)||`API returned ${r.status}`);}
-    const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||JSON.stringify(d.error)||"API error");}
-    const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
-    if(!t)return null;
-    const cleaned=t.replace(/```json|```/g,"").trim();
-    try{return JSON.parse(cleaned);}catch{
-      const m=cleaned.match(/\{[\s\S]*\}/);
-      if(m){try{return JSON.parse(m[0]);}catch{}}
-      return null;
+  const callAPI=async(prompt,model="claude-haiku-4-5-20251001",retries=1)=>{
+    for(let attempt=0;attempt<=retries;attempt++){
+      if(attempt>0)await new Promise(r=>setTimeout(r,5000));
+      try{
+        const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),55000);
+        const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,max_tokens:1500,messages:[{role:"user",content:prompt}]}),signal:ac.signal}).finally(()=>clearTimeout(timer));
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok||d.error){
+          const msg=d.error?.message||d.error||`HTTP ${r.status}`;
+          if(msg.toLowerCase().includes("rate limit")&&attempt<retries){await new Promise(r=>setTimeout(r,15000));continue;}
+          if(attempt<retries)continue;
+          throw new Error(msg);
+        }
+        const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
+        if(!t){if(attempt<retries)continue;return null;}
+        const cleaned=t.replace(/```json|```/g,"").trim();
+        try{return JSON.parse(cleaned);}catch{}
+        const m=cleaned.match(/\{[\s\S]*\}/);
+        if(m){try{return JSON.parse(m[0]);}catch{}}
+        if(attempt<retries)continue;
+        return null;
+      }catch(e){
+        if(attempt>=retries)throw e;
+      }
     }
+    return null;
   };
 
   /* ═══ STEP 1: Detect business + find profiles ═══ */
@@ -436,10 +449,10 @@ export default function App(){
     const results={};
     for(let i=0;i<phases.length;i++){
       const pid=phases[i];
-      if(i>0)await new Promise(r=>setTimeout(r,12000));
+      if(i>0)await new Promise(r=>setTimeout(r,15000));
       setScanPhases(p=>p.map(x=>x.id===pid?{...x,status:"active"}:x));
       try{
-        const res=await callAPI(buildPrompt(pid,inputs,market,bType));
+        const res=await callAPI(buildPrompt(pid,inputs,market,bType,pid==="recommendations"?results:null));
         const sc=res?.score||res?.overallScore||0;
         if(pid==="google")gs=sc;if(pid==="website")ws=sc;if(pid==="social")ss=sc;if(pid==="competitive")cs=sc;
         results[pid]=res;
