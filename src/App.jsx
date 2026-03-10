@@ -43,23 +43,23 @@ const WHATIF_TOGGLES=[
 ];
 
 
-/* ═══ PROMPTS ═══ */
+/* ═══ PROMPTS (compact to stay under rate limits) ═══ */
 const J="\n\nRESPOND WITH ONLY VALID JSON. No markdown, no backticks, no commentary.";
 function buildPrompt(phase,inp,mkt,bType){
-  const info=`Business: ${inp.name}\nCity: ${inp.city}\nCountry: ${COUNTRIES.find(c=>c.code===inp.country)?.name||inp.country}\nType: ${bType||"Unknown"}\n${inp.website?`Website: ${inp.website}\n`:""}${inp.facebook?`Facebook: ${inp.facebook}\n`:""}${inp.instagram?`Instagram: ${inp.instagram}\n`:""}${inp.tiktok?`TikTok: ${inp.tiktok}\n`:""}${inp.twitter?`X: ${inp.twitter}\n`:""}${inp.youtube?`YouTube: ${inp.youtube}\n`:""}${inp.linkedin?`LinkedIn: ${inp.linkedin}\n`:""}`;
-  const ctx=`Market: ${mkt.label}. Platforms: ${mkt.platforms.join(",")}. ${mkt.whatsappPrimary?"WhatsApp is PRIMARY channel.":""} Also check: ${mkt.platformChecks}`;
+  const socials=[inp.website&&`Web:${inp.website}`,inp.facebook&&`FB:${inp.facebook}`,inp.instagram&&`IG:${inp.instagram}`,inp.tiktok&&`TT:${inp.tiktok}`,inp.youtube&&`YT:${inp.youtube}`,inp.twitter&&`X:${inp.twitter}`,inp.linkedin&&`LI:${inp.linkedin}`].filter(Boolean).join(", ");
+  const biz=`${inp.name}, ${inp.city}, ${COUNTRIES.find(c=>c.code===inp.country)?.name||inp.country} (${bType||"unknown"})${socials?"\n"+socials:""}`;
   const P={
-    detect:`Search for this business online and identify it. Also find ALL their online profiles:\n${info}\n\nSearch for their website, Google Business Profile, Facebook page, Instagram, TikTok, YouTube channel, LinkedIn, X/Twitter, and any other relevant profiles.\n\nReturn JSON: {"businessType":"TYPE_ID_FROM(dental,restaurant,salon,realestate,retail,legal,auto,homeservice,fitness,education,other)","businessName":"FULL_OFFICIAL_NAME","address":"FULL_ADDRESS","confidence":"HIGH_MEDIUM_LOW","profiles":{"website":"URL_OR_EMPTY","google":"GOOGLE_MAPS_URL_OR_EMPTY","facebook":"FULL_FB_URL_OR_EMPTY","instagram":"FULL_IG_URL_OR_EMPTY","tiktok":"FULL_TT_URL_OR_EMPTY","youtube":"FULL_YT_URL_OR_EMPTY","twitter":"FULL_X_URL_OR_EMPTY","linkedin":"FULL_LI_URL_OR_EMPTY","yelp":"FULL_YELP_URL_OR_EMPTY"}}${J}`,
+    detect:`Identify this business and find its online profiles:\n${biz}\n\nReturn JSON: {"businessType":"dental|restaurant|salon|realestate|retail|legal|auto|homeservice|fitness|education|other","businessName":"","address":"","confidence":"HIGH|MEDIUM|LOW","profiles":{"website":"","google":"","facebook":"","instagram":"","tiktok":"","youtube":"","twitter":"","linkedin":"","yelp":""}}${J}`,
 
-    google:`Analyze Google Business Profile for:\n${info}\n${ctx}\n\nReturn JSON: {"score":NUM_0_100,"reviewCount":NUM,"avgRating":NUM,"ownerResponseRate":"PCT_OR_UNKNOWN","recentReviewDate":"DATE_OR_UNKNOWN","photoCount":NUM,"hasDescription":BOOL,"descriptionQuality":"GOOD_POOR_EMPTY","hasGooglePosts":BOOL,"lastPostDate":"DATE_OR_UNKNOWN","hoursListed":BOOL,"categoriesSet":BOOL,"qAndACount":NUM,"findings":["finding1","finding2","finding3"],"positives":["pos1","pos2"],"evidence":{"reviewCountDetail":"str","ratingDetail":"str","photoDetail":"str","competitorAvgReviews":"str"}}${J}`,
+    google:`Score this business's Google Business Profile 0-100:\n${biz}\n\nReturn JSON: {"score":0,"reviewCount":0,"avgRating":0,"ownerResponseRate":"","recentReviewDate":"","photoCount":0,"hasDescription":false,"hasGooglePosts":false,"hoursListed":false,"categoriesSet":false,"qAndACount":0,"findings":["issue1","issue2","issue3"],"positives":["good1","good2"]}${J}`,
 
-    website:`Analyze website for:\n${info}\n${ctx}\nType: ${bType}\n\nCheck: mobile-friendly, SSL, CTAs, online booking, chatbot, contact form, clickable phone, blog, testimonials, video, load speed. ${mkt.id==="US"?"Also check ADA/accessibility compliance indicators.":""} Check if competitors run Google Ads for this business category in this area.\n\nReturn JSON: {"score":NUM_0_100,"exists":BOOL,"url":"URL_OR_NONE","mobileFriendly":"YES_NO_UNKNOWN","hasSSL":BOOL,"hasCTA":BOOL,"hasOnlineBooking":BOOL,"hasChatbot":BOOL,"hasContactForm":BOOL,"hasClickablePhone":BOOL,"hasBlog":BOOL,"hasTestimonials":BOOL,"hasVideo":BOOL,"loadSpeed":"FAST_MED_SLOW","adaCompliance":"GOOD_POOR_UNKNOWN","competitorsRunAds":BOOL,"competitorAdKeywords":["keyword1"],"findings":["f1","f2","f3"],"positives":["p1","p2"],"evidence":{"urlChecked":"url","featuresFound":"list","missingFeatures":"list"}}${J}`,
+    website:`Score this business's website 0-100. Check mobile, SSL, CTAs, booking, chatbot, forms, phone, blog, testimonials, video, speed:\n${biz}\n\nReturn JSON: {"score":0,"exists":false,"url":"","mobileFriendly":"YES|NO","hasSSL":false,"hasCTA":false,"hasOnlineBooking":false,"hasChatbot":false,"hasContactForm":false,"hasClickablePhone":false,"hasBlog":false,"hasTestimonials":false,"hasVideo":false,"loadSpeed":"MED","competitorsRunAds":false,"findings":["issue1"],"positives":["good1"]}${J}`,
 
-    social:`Analyze ALL social media + YouTube deep dive for:\n${info}\n${ctx}\nType: ${bType}\n\nDo a DEEP YouTube analysis if channel exists. Also check platform-specific: ${mkt.platformChecks}\n\nReturn JSON: {"score":NUM_0_100,"facebook":{"exists":BOOL,"followers":"NUM_OR_UNK","lastPost":"DATE_OR_UNK","frequency":"DAILY_WEEKLY_MONTHLY_RARE_NEVER"},"instagram":{"exists":BOOL,"followers":"NUM_OR_UNK","lastPost":"DATE_OR_UNK","frequency":"STR","usesReels":BOOL},"tiktok":{"exists":BOOL,"followers":"NUM_OR_UNK","videoCount":"NUM_OR_0"},"youtube":{"exists":BOOL,"subscribers":"NUM_OR_UNK","videoCount":"NUM_OR_0","lastUpload":"DATE_OR_UNK"},"whatsapp":{"exists":BOOL,"businessVerified":BOOL},"twitter":{"exists":BOOL,"active":BOOL},"linkedin":{"exists":BOOL},"findings":["f1","f2","f3"],"positives":["p1","p2"],"evidence":{"platformsFound":"list","platformsMissing":"list"}}${J}`,
+    social:`Score social media presence 0-100 across all platforms:\n${biz}\n\nReturn JSON: {"score":0,"facebook":{"exists":false,"followers":"","lastPost":"","frequency":""},"instagram":{"exists":false,"followers":"","lastPost":"","usesReels":false},"tiktok":{"exists":false,"followers":""},"youtube":{"exists":false,"subscribers":"","videoCount":0},"whatsapp":{"exists":false},"twitter":{"exists":false},"linkedin":{"exists":false},"findings":["issue1"],"positives":["good1"]}${J}`,
 
-    competitive:`Find 3-5 real competitors and compare:\n${info}\n${ctx}\nType: ${bType}\n\nName REAL competitors with REAL data. Also describe what a potential customer sees at 10pm on each site.\n\nReturn JSON: {"score":NUM_0_100,"competitors":[{"name":"REAL_NAME","reviewCount":NUM,"avgRating":NUM,"hasWebsite":BOOL,"hasChatbot":BOOL,"hasBooking":BOOL,"socialPresence":"STRONG_MOD_WEAK","estimatedScore":NUM_0_100}],"marketPosition":"TOP_MID_BOTTOM","areaAvgReviews":NUM,"areaAvgRating":NUM,"afterHoursComparison":{"thisBusiness":"WHAT_CUSTOMER_SEES_AT_10PM","topCompetitor":"WHAT_COMPETITOR_SITE_SHOWS","competitorName":"NAME"},"findings":["f1","f2","f3"],"positives":["p1"],"evidence":{"searchQuery":"query","competitorsFound":NUM}}${J}`,
+    competitive:`Find 3 real competitors near this business, compare scores, and describe what a customer sees at 10pm on each site:\n${biz}\n\nReturn JSON: {"score":0,"competitors":[{"name":"","reviewCount":0,"avgRating":0,"hasWebsite":false,"hasChatbot":false,"hasBooking":false,"socialPresence":"WEAK","estimatedScore":0}],"marketPosition":"MID","areaAvgReviews":0,"afterHoursComparison":{"thisBusiness":"","topCompetitor":"","competitorName":""},"findings":["issue1"],"positives":["good1"]}${J}`,
 
-    recommendations:`Generate prioritized recommendations:\n${info}\n${ctx}\nType: ${bType}\nPricing: Starter ${mkt.pricing.starter}, Growth ${mkt.pricing.growth}, Pro ${mkt.pricing.pro}\nCustomer LTV: ${mkt.ltv}\n\nFor EACH fix: specific free copy-paste content + DIY time vs automated time. Include revenue math using real industry percentages (e.g. "a 0.5 star increase = 20% revenue lift"). ${mkt.id==="EG"?"Write Arabic content in Egyptian Arabic (ammeya), NOT fusha.":mkt.id==="GULF"?"Write Arabic in formal Arabic with English translation.":""}\n\nReturn JSON: {"overallScore":NUM_0_100,"potentialScore":NUM_0_100,"monthlyLossPercent":"X-Y%","monthlyGainPercent":"X-Y%","revenueMath":"STEP_BY_STEP_USING_REAL_PERCENTAGES","topFixes":[{"priority":NUM,"title":"TITLE","impact":"HIGH_MED_LOW","difficulty":"EASY_MED_HARD","diyTime":"TIME","zidlyTime":"TIME","freeContent":"ACTUAL_COPY_PASTE_CONTENT","zidlyModule":"MODULE_OR_NONE","zidlyDescription":"ONE_SENTENCE","explanation":"WHY_WITH_DATA"}],"quickWins":["qw1","qw2","qw3"],"industryAvgScore":NUM_0_100,"percentile":"BOTTOM_X_PERCENT_IN_CITY"}${J}`
+    recommendations:`Generate 5 prioritized fixes with free copy-paste content and revenue math for:\n${biz}\nLTV: ${mkt.ltv}\n\nReturn JSON: {"overallScore":0,"potentialScore":0,"monthlyLossPercent":"","monthlyGainPercent":"","revenueMath":"","topFixes":[{"priority":1,"title":"","impact":"HIGH","difficulty":"EASY","diyTime":"","zidlyTime":"","freeContent":"","zidlyModule":"","zidlyDescription":"","explanation":""}],"quickWins":["win1","win2","win3"],"industryAvgScore":0,"percentile":""}${J}`
   };
   return P[phase];
 }
@@ -367,17 +367,9 @@ export default function App(){
     return()=>window.removeEventListener("google-places-ready",init);
   },[]);
 
-  const callAPI=async(prompt)=>{
-    const doFetch=async(modelId,withTools)=>{
-      const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),55000);
-      const body={model:modelId,max_tokens:2000,messages:[{role:"user",content:prompt}]};
-      if(withTools)body.tools=[{type:"web_search_20250305",name:"web_search"}];
-      return fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ac.signal}).finally(()=>clearTimeout(timer));
-    };
-    // Try current model with tools, then without tools, then fallback model without tools
-    let r=await doFetch("claude-sonnet-4-6",true);
-    if(!r.ok)r=await doFetch("claude-sonnet-4-6",false);
-    if(!r.ok)r=await doFetch("claude-sonnet-4-20250514",false);
+  const callAPI=async(prompt,model="claude-haiku-4-5-20251001")=>{
+    const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),55000);
+    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,max_tokens:1500,messages:[{role:"user",content:prompt}]}),signal:ac.signal}).finally(()=>clearTimeout(timer));
     if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||JSON.stringify(err)||`API returned ${r.status}`);}
     const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||JSON.stringify(d.error)||"API error");}
     const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
@@ -395,7 +387,7 @@ export default function App(){
     if(!inputs.name.trim()||!inputs.city.trim())return;
     setPhase("detecting");
     try{
-      const res=await callAPI(buildPrompt("detect",inputs,market,null));
+      const res=await callAPI(buildPrompt("detect",inputs,market,null),"claude-sonnet-4-20250514");
       if(res){
         setBizType(res.businessType||"other");
         if(res.profiles){
@@ -444,6 +436,7 @@ export default function App(){
     const results={};
     for(let i=0;i<phases.length;i++){
       const pid=phases[i];
+      if(i>0)await new Promise(r=>setTimeout(r,12000));
       setScanPhases(p=>p.map(x=>x.id===pid?{...x,status:"active"}:x));
       try{
         const res=await callAPI(buildPrompt(pid,inputs,market,bType));
