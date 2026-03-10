@@ -368,15 +368,20 @@ export default function App(){
   },[]);
 
   const callAPI=async(prompt)=>{
-    const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),45000);
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]}),signal:ac.signal}).finally(()=>clearTimeout(timer));
+    const doFetch=async(withTools)=>{
+      const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),45000);
+      const body={model:"claude-sonnet-4-6",max_tokens:2000,messages:[{role:"user",content:prompt}]};
+      if(withTools)body.tools=[{type:"web_search_20250305",name:"web_search"}];
+      return fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ac.signal}).finally(()=>clearTimeout(timer));
+    };
+    let r=await doFetch(true);
+    if(!r.ok)r=await doFetch(false); // retry without tools if tool unsupported
     if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API returned ${r.status}`);}
     const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||"API error");}
     const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
     if(!t)return null;
     const cleaned=t.replace(/```json|```/g,"").trim();
     try{return JSON.parse(cleaned);}catch{
-      // Try extracting JSON object from anywhere in the response
       const m=cleaned.match(/\{[\s\S]*\}/);
       if(m){try{return JSON.parse(m[0]);}catch{}}
       return null;
