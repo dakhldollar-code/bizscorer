@@ -373,7 +373,14 @@ export default function App(){
     if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API returned ${r.status}`);}
     const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||"API error");}
     const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
-    try{return JSON.parse(t.replace(/```json|```/g,"").trim());}catch{return null;}
+    if(!t)return null;
+    const cleaned=t.replace(/```json|```/g,"").trim();
+    try{return JSON.parse(cleaned);}catch{
+      // Try extracting JSON object from anywhere in the response
+      const m=cleaned.match(/\{[\s\S]*\}/);
+      if(m){try{return JSON.parse(m[0]);}catch{}}
+      return null;
+    }
   };
 
   /* ═══ STEP 1: Detect business + find profiles ═══ */
