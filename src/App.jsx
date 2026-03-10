@@ -368,16 +368,18 @@ export default function App(){
   },[]);
 
   const callAPI=async(prompt)=>{
-    const doFetch=async(withTools)=>{
-      const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),45000);
-      const body={model:"claude-sonnet-4-6",max_tokens:2000,messages:[{role:"user",content:prompt}]};
+    const doFetch=async(modelId,withTools)=>{
+      const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),55000);
+      const body={model:modelId,max_tokens:2000,messages:[{role:"user",content:prompt}]};
       if(withTools)body.tools=[{type:"web_search_20250305",name:"web_search"}];
       return fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ac.signal}).finally(()=>clearTimeout(timer));
     };
-    let r=await doFetch(true);
-    if(!r.ok)r=await doFetch(false); // retry without tools if tool unsupported
-    if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API returned ${r.status}`);}
-    const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||"API error");}
+    // Try current model with tools, then without tools, then fallback model without tools
+    let r=await doFetch("claude-sonnet-4-6",true);
+    if(!r.ok)r=await doFetch("claude-sonnet-4-6",false);
+    if(!r.ok)r=await doFetch("claude-sonnet-4-20250514",false);
+    if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||err.error||JSON.stringify(err)||`API returned ${r.status}`);}
+    const d=await r.json();if(d.error){throw new Error(typeof d.error==="string"?d.error:d.error.message||JSON.stringify(d.error)||"API error");}
     const t=d.content?.filter(b=>b.type==="text")?.map(b=>b.text)?.join("")||"";
     if(!t)return null;
     const cleaned=t.replace(/```json|```/g,"").trim();
@@ -451,12 +453,13 @@ export default function App(){
         setScanPhases(p=>p.map(x=>x.id===pid?{...x,status:"done",score:pid==="recommendations"?null:sc,data:res}:x));
       }catch(e){
         results[pid]=null;
+        if(!results._firstErr)results._firstErr=e?.message||String(e);
         setScanPhases(p=>p.map(x=>x.id===pid?{...x,status:"done",score:0,data:null}:x));
       }
     }
     // If all phases failed, show error and return to confirm
     if(!results.google&&!results.website&&!results.social&&!results.competitive&&!results.recommendations){
-      setScanError("Our AI couldn't complete the scan. This may be a temporary issue — please try again in a moment.");
+      setScanError(results._firstErr||"Our AI couldn't complete the scan. This may be a temporary issue — please try again in a moment.");
       setPhase("confirm");
       return;
     }
